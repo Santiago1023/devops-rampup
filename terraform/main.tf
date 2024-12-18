@@ -82,9 +82,19 @@ resource "aws_route_table_association" "route2" {
   route_table_id = aws_route_table.route-ig.id
 }
 
+# Elastic IP for NAT Gateway
+resource "aws_eip" "nat_eip" {
+  # vpc = true
+  domain = "vpc"
+  tags = {
+    Name = "${var.my_project_name}-nat-eip"
+  }
+}
 
+# NAT Gateway
 resource "aws_nat_gateway" "ng" {
-  subnet_id     = aws_subnet.public-subnet1
+  allocation_id = aws_eip.nat_eip.id # Vincula el Elastic IP
+  subnet_id     = aws_subnet.public-subnet1.id
   tags = {
     Name = "${var.my_project_name}-nat-gw"
   }
@@ -120,33 +130,135 @@ resource "aws_route_table_association" "private-route2" {
 
 
 
-# instance 
-resource "aws_instance" "web-instance" {
-  ami           = "ami-01816d07b1128cd2d"   # ami amazon linux en la free tier us-east-1
-  instance_type = "t2.micro"    # t2.micro for free tier
-  user_data     = file("init-script.sh")    # script to install all the dependencies and run the apps
-  vpc_security_group_ids = [aws_security_group.web-sg.id]   # security group
+# Security Group for Load Balancer
+resource "aws_security_group" "lb_sg" {
+  name_prefix = "${var.my_project_name}-lb-sg"
+  vpc_id      = aws_vpc.vpc.id
 
-  tags = {
-    Name = "${var.my_project_name}-instance"
-  }
-}
-
-resource "aws_security_group" "web-sg" {
-    tags = {
-        Name = "${var.my_project_name}-sg"
-  }
+  # Allow incoming traffic to the Load Balancer (port 80)
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Public access
   }
 
+  # Allow outbound traffic to instances on the frontend port (3030)
+  egress {
+    from_port   = 3030
+    to_port     = 3030
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.vpc.cidr_block] # Comunicación dentro de la VPC
+  }
+
+  tags = {
+    Name = "${var.my_project_name}-lb-sg"
+  }
+}
+
+
+# Security Group for EC2 instances
+resource "aws_security_group" "ec2_sg" {
+  name_prefix = "${var.my_project_name}-ec2-sg"
+  vpc_id      = aws_vpc.vpc.id
+
+  # Allow traffic from Load Balancer to the frontend (port 3030)
+  ingress {
+    from_port       = 3030
+    to_port         = 3030
+    protocol        = "tcp"
+    # cidr_blocks     = [aws_vpc.vpc.cidr_block] # Communication within the VPC
+    security_groups = [aws_security_group.lb_sg.id]
+  }
+
+  # Allow internal communication between frontend and backend (port 3000)
+  ingress {
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    cidr_blocks     = [aws_vpc.vpc.cidr_block] # Communication within the VPC
+  }
+
+  # Allow outbound traffic to anywhere (to communicate with databases or internet if needed)
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.my_project_name}-ec2-sg"
+  }
+}
+
+
+
+# Load Balancer Target Group
+resource "aws_lb_target_group" "tg" {
+  name     = "${var.my_project_name}-tg"
+  port     = 3030                    # Puerto del frontend
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.vpc.id
+
+  health_check {
+    enabled             = true
+    path                = "/"        # Ruta para el health check
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    protocol            = "HTTP"
+  }
+
+  tags = {
+    Name = "${var.my_project_name}-tg"
+  }
+}
+
+# Load Balancer (Application Load Balancer)
+resource "aws_lb" "elb" {
+  name               = "${var.my_project_name}-elb"
+  internal           = false            # Public LB
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb_sg.id]
+  subnets            = [aws_subnet.public-subnet1.id, aws_subnet.public-subnet2.id]
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "${var.my_project_name}-elb"
+  }
+}
+
+# Listener for HTTP (Port 80 -> 3030)
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.elb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.tg.arn
+  }
+}
+
+resource "aws_lb_target_group_attachment" "tg_attachment" {
+  target_group_arn = aws_lb_target_group.tg.arn
+  target_id        = aws_instance.instance.id
+  port             = 3030
+}
+
+
+# instance 
+resource "aws_instance" "instance" {
+  subnet_id = aws_subnet.private-subnet1.id
+  ami           = "ami-01816d07b1128cd2d"   # ami amazon linux en la free tier us-east-1
+  instance_type = "t2.micro"    # t2.micro for free tier
+  user_data     = file("init-script.sh")    # script to install all the dependencies and run the apps
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]   # security group
+
+  tags = {
+    Name = "${var.my_project_name}-instance"
   }
 }

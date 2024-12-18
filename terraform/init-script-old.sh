@@ -4,6 +4,8 @@
 sudo yum update -y
 
 # Instalar Node.js y npm
+# curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+# curl -fsSL https://rpm.nodesource.com/setup_16.x | sudo bash -
 curl -sL https://rpm.nodesource.com/setup_16.x | sudo bash -
 sudo yum install -y nodejs git
 
@@ -55,40 +57,9 @@ Environment=PORT=3000
 WantedBy=multi-user.target
 EOF
 
-# Habilitar e iniciar los servicios del Front-end y Back-end
+# Habilitar e iniciar los servicios
 sudo systemctl daemon-reload
 sudo systemctl enable front-end.service
 sudo systemctl enable back-end.service
 sudo systemctl start front-end.service
 sudo systemctl start back-end.service
-
-# Instalar y configurar Nginx como proxy reverso
-sudo yum install -y nginx
-
-sudo tee /etc/nginx/conf.d/app.conf > /dev/null <<EOF
-server {
-    listen 80;
-
-    location / {
-        proxy_pass http://localhost:3030;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:3000/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-EOF
-
-# Habilitar e iniciar Nginx
-sudo systemctl enable nginx
-sudo systemctl start nginx
