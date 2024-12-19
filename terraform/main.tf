@@ -310,3 +310,52 @@ resource "aws_db_instance" "db_instance" {
      Name = "${var.my_project_name}-db"
   }
 }
+
+
+resource "aws_security_group" "bastion_sg" {
+  name_prefix = "${var.my_project_name}-bastion-sg"
+  description = "Security group for Bastion Host"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+      description      = "Allow SSH from specific IP"
+      from_port        = 22
+      to_port          = 22
+      protocol         = "tcp"
+      cidr_blocks      = ["0.0.0.0/0"] # Tu IP pública para acceso restringido
+    }
+
+  egress {
+      description      = "Allow all outbound traffic"
+      from_port        = 0
+      to_port          = 0
+      protocol         = "-1"
+      cidr_blocks      = ["0.0.0.0/0"]
+    }
+
+  tags = {
+    Name = "bastion-sg"
+  }
+}
+
+resource "aws_instance" "bastion" {
+  ami           = "ami-01816d07b1128cd2d"   # ami amazon linux en la free tier us-east-1
+  instance_type = "t2.micro"    # t2.micro for free tier
+  subnet_id     = aws_subnet.public-subnet1.id      # Subnet pública donde irá el bastion host
+  key_name      = var.key_name
+  # security_groups = [aws_security_group.bastion_sg.name]
+  vpc_security_group_ids = [aws_security_group.bastion_sg.id]   # security group
+
+
+  tags = {
+    Name = "${var.my_project_name}-bastion-instance"
+  }
+}
+# Asigna un Elastic IP a la instancia Bastion Host
+resource "aws_eip" "bastion_eip" {
+  instance = aws_instance.bastion.id
+  domain = "vpc"
+  tags = {
+    Name = "${var.my_project_name}-bastion-eip"
+  }
+}
