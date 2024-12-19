@@ -51,3 +51,20 @@ variable "private_subnet_cidr_blocks" {
     "10.0.108.0/24"
   ]
 }
+
+variable "db_username" {
+  description = "Database administrator username"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_password" {
+  description = "Database administrator password"
+  type        = string
+  sensitive   = true
+}
+variable "db_name" {
+  description = "Database name"
+  type        = string
+  sensitive   = true
+}

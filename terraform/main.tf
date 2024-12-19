@@ -262,3 +262,51 @@ resource "aws_instance" "instance" {
     Name = "${var.my_project_name}-instance"
   }
 }
+
+
+
+resource "aws_security_group" "rds_sg" {
+  name = "${var.my_project_name}-rds-sg"
+  description = "Security group for rds and ec2 communication"
+  vpc_id = aws_vpc.vpc.id
+
+  # inbound rule that allows traffic from the EC2 security group, through TCP port 3306, which is the MySQL port
+  ingress {
+    description = "Allow MySQL traffic from only the ec2 sg"
+    from_port = "3306"
+    to_port = "3306"
+    protocol = "tcp"
+    security_groups = [aws_security_group.ec2_sg.id]
+  }
+
+  tags = {
+    Name = "${var.my_project_name}-rds-sg"
+  }
+}
+
+resource "aws_db_subnet_group" "rds_subnet_group" {
+  name = "${var.my_project_name}-rds-subnet-group"
+  description = "DB subnet group"
+  # subnet_ids = [aws_subnet.private-subnet2.id]
+  subnet_ids  = [aws_subnet.private-subnet1.id, aws_subnet.private-subnet2.id]
+}
+
+resource "aws_db_instance" "db_instance" {
+  allocated_storage    = 20
+  storage_type         = "gp2"  # General Purpose SSD
+  engine               = "mysql"
+  engine_version       = "8.0"  
+  instance_class       = "db.t3.micro"  # Free Tier
+  db_subnet_group_name = aws_db_subnet_group.rds_subnet_group.id
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  multi_az             = false  # Solo una zona de disponibilidad
+  publicly_accessible  = false  # No debe ser accesible desde Internet
+  username             = var.db_username
+  password             = var.db_password
+  db_name              = var.db_name
+  skip_final_snapshot  = true
+
+  tags = {
+     Name = "${var.my_project_name}-db"
+  }
+}
